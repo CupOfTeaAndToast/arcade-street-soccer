@@ -1,4 +1,7 @@
-// game.js - Corrected Input and Logic
+/**
+ * Arcade Street Soccer - Fixed Version
+ */
+
 const CONFIG = {
     width: 960, height: 540, groundY: 460,
     playerSpeed: 300, kickPower: 500, specialPower: 850,
@@ -9,9 +12,10 @@ class SoccerScene extends Phaser.Scene {
     constructor() { super('SoccerScene'); }
 
     preload() {
-        this.load.image('background', 'assets/street_cage_bg.png');
+        // MATCHING YOUR FILE EXTENSIONS
+        this.load.image('background', 'assets/street_cage_bg.jpg');
         this.load.image('ball', 'assets/ball_pixel.png');
-        this.load.spritesheet('striker', 'assets/striker_sheet.png', {
+        this.load.spritesheet('striker', 'assets/striker_sheet.jpg', {
             frameWidth: 140, frameHeight: 153
         });
     }
@@ -19,7 +23,7 @@ class SoccerScene extends Phaser.Scene {
     create() {
         this.add.image(CONFIG.width/2, CONFIG.height/2, 'background').setDisplaySize(CONFIG.width, CONFIG.height);
         
-        // Setup Players
+        // Players
         this.player1 = this.physics.add.sprite(200, CONFIG.groundY, 'striker').setScale(0.8).setCollideWorldBounds(true);
         this.player2 = this.physics.add.sprite(CONFIG.width - 200, CONFIG.groundY, 'striker').setScale(0.8).setCollideWorldBounds(true).setTint(0xff8888);
         this.player2.setFlipX(true);
@@ -27,19 +31,20 @@ class SoccerScene extends Phaser.Scene {
         this.player1.canAct = true; this.player1.stamina = 100;
         this.player2.canAct = true; this.player2.stamina = 100;
 
+        // Ball
         this.ball = this.physics.add.sprite(CONFIG.width/2, 300, 'ball').setCollideWorldBounds(true).setBounce(0.7).setDrag(100, 0);
+
+        // Physics
+        this.physics.add.collider(this.player1, this.ball);
+        this.physics.add.collider(this.player2, this.ball);
+        this.physics.add.collider(this.player1, this.player2);
 
         this.cursors = this.input.keyboard.createCursorKeys();
         this.keyZ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
         this.keyX = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
-
-        this.physics.add.collider(this.player1, this.ball);
-        this.physics.add.collider(this.player2, this.ball);
-        this.physics.add.collider(this.player1, this.player2);
     }
 
     update() {
-        // --- P1 CONTROLS ---
         if (this.player1.canAct) {
             let velX = 0;
             if (this.cursors.left.isDown) { velX = -CONFIG.playerSpeed; this.player1.setFlipX(true); }
@@ -50,12 +55,7 @@ class SoccerScene extends Phaser.Scene {
             if (Phaser.Input.Keyboard.JustDown(this.keyX) && this.player1.stamina >= 50) this.doKick(this.player1, true);
         }
 
-        // --- SIMPLE AI ---
-        this.simpleAI();
-    }
-
-    simpleAI() {
-        if (!this.player2.canAct) return;
+        // Simple AI
         const dir = this.ball.x < this.player2.x ? -1 : 1;
         this.player2.setVelocityX(dir * CONFIG.playerSpeed * 0.7);
         this.player2.setFlipX(dir < 0);
@@ -67,8 +67,8 @@ class SoccerScene extends Phaser.Scene {
     doKick(player, isSpecial) {
         player.canAct = false;
         player.setVelocityX(0);
-        player.play(isSpecial ? 'p1_special' : 'p1_kick', true);
-
+        // Note: Sprite sheet frames would be defined here if animations were added back
+        
         this.time.delayedCall(200, () => {
             const dir = player.flipX ? -1 : 1;
             const force = isSpecial ? CONFIG.specialPower : CONFIG.kickPower;
@@ -79,3 +79,16 @@ class SoccerScene extends Phaser.Scene {
         this.time.delayedCall(500, () => player.canAct = true);
     }
 }
+
+// Global Game Config
+const game = new Phaser.Game({
+    type: Phaser.AUTO,
+    width: CONFIG.width,
+    height: CONFIG.height,
+    parent: 'game-container',
+    physics: {
+        default: 'arcade',
+        arcade: { gravity: { y: 900 } }
+    },
+    scene: SoccerScene
+});
