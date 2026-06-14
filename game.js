@@ -1,444 +1,81 @@
-/**
- * Arcade Street Soccer - Fighting Game Style
- * Phaser 3.60
- * 1v1 side-view street soccer
- */
-
+// game.js - Corrected Input and Logic
 const CONFIG = {
-    width: 960,
-    height: 540,
-    groundY: 460,
-    playerSpeed: 220,
-    kickPower: 420,
-    specialPower: 700,
-    staminaRegen: 18, // per second
+    width: 960, height: 540, groundY: 460,
+    playerSpeed: 300, kickPower: 500, specialPower: 850,
+    staminaRegen: 20
 };
 
 class SoccerScene extends Phaser.Scene {
-    constructor() {
-        super('SoccerScene');
-    }
+    constructor() { super('SoccerScene'); }
 
     preload() {
-        // Load assets from /assets folder
         this.load.image('background', 'assets/street_cage_bg.png');
         this.load.image('ball', 'assets/ball_pixel.png');
-        
-        // Striker sprite sheet - generated 16-bit pixel art
-        // Sheet: 10 columns x 5 rows, 140x153 px per frame
-        // Idle: 0-7, Run: 10-17, Kick: 20-29, Special: 30-39
         this.load.spritesheet('striker', 'assets/striker_sheet.png', {
-            frameWidth: 140,
-            frameHeight: 153
+            frameWidth: 140, frameHeight: 153
         });
     }
 
     create() {
-        // Background
-        this.add.image(CONFIG.width/2, CONFIG.height/2, 'background')
-            .setDisplaySize(CONFIG.width, CONFIG.height);
+        this.add.image(CONFIG.width/2, CONFIG.height/2, 'background').setDisplaySize(CONFIG.width, CONFIG.height);
+        
+        // Setup Players
+        this.player1 = this.physics.add.sprite(200, CONFIG.groundY, 'striker').setScale(0.8).setCollideWorldBounds(true);
+        this.player2 = this.physics.add.sprite(CONFIG.width - 200, CONFIG.groundY, 'striker').setScale(0.8).setCollideWorldBounds(true).setTint(0xff8888);
+        this.player2.setFlipX(true);
 
-        // Vignette / cage overlay feel
-        this.add.rectangle(CONFIG.width/2, CONFIG.height/2, CONFIG.width, CONFIG.height, 0x000000, 0).setDepth(10);
+        this.player1.canAct = true; this.player1.stamina = 100;
+        this.player2.canAct = true; this.player2.stamina = 100;
 
-        // Physics world
-        this.physics.world.setBounds(0, 0, CONFIG.width, CONFIG.height);
+        this.ball = this.physics.add.sprite(CONFIG.width/2, 300, 'ball').setCollideWorldBounds(true).setBounce(0.7).setDrag(100, 0);
 
-        // Ground collider (invisible)
-        const ground = this.add.rectangle(CONFIG.width/2, CONFIG.groundY + 20, CONFIG.width, 40, 0x000000, 0);
-        this.physics.add.existing(ground, true);
-
-        // --- PLAYERS ---
-        // Sprite is 140x153, scale down to ~0.9 for 16-bit fighter size
-        this.player1 = this.physics.add.sprite(200, CONFIG.groundY, 'striker', 0)
-            .setCollideWorldBounds(true)
-            .setScale(0.85)
-            .setDepth(5);
-        this.player1.body.setSize(45, 95, true).setOffset(48, 52);
-        this.player1.setFlipX(false);
-        this.player1.canAct = true;
-        this.player1.stamina = 100;
-
-        this.player2 = this.physics.add.sprite(CONFIG.width - 200, CONFIG.groundY, 'striker', 0)
-            .setCollideWorldBounds(true)
-            .setScale(0.85)
-            .setDepth(5);
-        this.player2.body.setSize(45, 95, true).setOffset(48, 52);
-        this.player2.setFlipX(true); // face left
-        this.player2.canAct = true;
-        this.player2.stamina = 100;
-        this.player2.tint = 0xff8888; // Red team tint for P2
-
-        // Players collide with each other (no passing through)
-        this.physics.add.collider(this.player1, this.player2);
-
-        // --- BALL ---
-        this.ball = this.physics.add.sprite(CONFIG.width/2, 300, 'ball')
-            .setCollideWorldBounds(true)
-            .setBounce(0.72, 0.72)
-            .setDrag(120, 0)
-            .setScale(1.6)
-            .setDepth(4);
-        this.ball.body.setCircle(14, 2, 2);
-        this.ball.body.setMass(0.6);
-
-        // Ball collisions
-        this.physics.add.collider(this.ball, ground);
-        this.physics.add.collider(this.ball, this.player1);
-        this.physics.add.collider(this.ball, this.player2);
-
-        // --- ANIMATIONS ---
-        // Sprite sheet layout (10 cols):
-        // Row 0: Idle 0-9  | Row 1: Run 10-19 | Row 2: Kick 20-29 | Row 3-4: Special 30-39
-        this.anims.create({
-            key: 'p1_idle',
-            frames: this.anims.generateFrameNumbers('striker', { start: 0, end: 7 }),
-            frameRate: 8,
-            repeat: -1
-        });
-        this.anims.create({
-            key: 'p1_run',
-            frames: this.anims.generateFrameNumbers('striker', { start: 10, end: 17 }),
-            frameRate: 12,
-            repeat: -1
-        });
-        this.anims.create({
-            key: 'p1_kick',
-            frames: this.anims.generateFrameNumbers('striker', { start: 20, end: 29 }),
-            frameRate: 18,
-            repeat: 0
-        });
-        this.anims.create({
-            key: 'p1_special',
-            frames: this.anims.generateFrameNumbers('striker', { start: 30, end: 39 }),
-            frameRate: 20,
-            repeat: 0
-        });
-
-        // P2 uses same animations (tinted red)
-        this.player1.play('p1_idle');
-        this.player2.play('p1_idle');
-
-        // --- INPUT ---
         this.cursors = this.input.keyboard.createCursorKeys();
         this.keyZ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
         this.keyX = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
 
-        // --- GOALS ---
-        // Invisible goal zones
-        this.goalLeft = this.add.zone(25, CONFIG.groundY - 40, 50, 120);
-        this.physics.world.enable(this.goalLeft);
-        this.goalLeft.body.setAllowGravity(false);
-        
-        this.goalRight = this.add.zone(CONFIG.width - 25, CONFIG.groundY - 40, 50, 120);
-        this.physics.world.enable(this.goalRight);
-        this.goalRight.body.setAllowGravity(false);
-
-        this.physics.add.overlap(this.ball, this.goalLeft, () => this.scoreGoal(2));
-        this.physics.add.overlap(this.ball, this.goalRight, () => this.scoreGoal(1));
-
-        // --- UI / HUD - Fighting Game Style ---
-        this.createHUD();
-
-        // Game state
-        this.score = { p1: 0, p2: 0 };
-        this.matchActive = true;
-        this.lastKickTime = { p1: 0, p2: 0 };
-
-        this.updateScoreText();
+        this.physics.add.collider(this.player1, this.ball);
+        this.physics.add.collider(this.player2, this.ball);
+        this.physics.add.collider(this.player1, this.player2);
     }
 
-    createHUD() {
-        const g = this.add.graphics().setDepth(20);
-        
-        // Top black bar
-        g.fillStyle(0x0d0d0d, 1);
-        g.fillRect(0, 0, CONFIG.width, 68);
-
-        // Stamina bar backgrounds
-        g.fillStyle(0x222222, 1);
-        g.fillRect(32, 22, 320, 18); // P1
-        g.fillRect(CONFIG.width - 352, 22, 320, 18); // P2
-
-        // Player names - fighting game style
-        this.add.text(32, 44, 'STRIKER BLUE', { fontFamily: 'monospace', fontSize: '12px', color: '#00d8ff', fontStyle: 'bold' }).setDepth(21);
-        this.add.text(CONFIG.width - 32, 44, 'STRIKER RED', { fontFamily: 'monospace', fontSize: '12px', color: '#ff4a4a', fontStyle: 'bold' }).setOrigin(1,0).setDepth(21);
-
-        // Stamina bars (foreground, will be resized)
-        this.staminaBarP1 = this.add.rectangle(32, 22, 320, 18, 0xffe600).setOrigin(0,0).setDepth(21);
-        this.staminaBarP2 = this.add.rectangle(CONFIG.width - 32, 22, 320, 18, 0xffe600).setOrigin(1,0).setDepth(21);
-
-        // Score / Timer center box
-        g.fillStyle(0x111111, 1);
-        g.fillRect(CONFIG.width/2 - 90, 12, 180, 44);
-        g.lineStyle(2, 0xffe600, 1);
-        g.strokeRect(CONFIG.width/2 - 90, 12, 180, 44);
-
-        this.scoreText = this.add.text(CONFIG.width/2, 34, '0 - 0', {
-            fontFamily: 'monospace',
-            fontSize: '28px',
-            color: '#ffffff'
-        }).setOrigin(0.5).setDepth(22);
-
-        this.timerText = this.add.text(CONFIG.width/2, 14, '99', {
-            fontFamily: 'monospace',
-            fontSize: '11px',
-            color: '#aaaaaa'
-        }).setOrigin(0.5, 0).setDepth(22);
-
-        // GOAL text (hidden)
-        this.goalText = this.add.text(CONFIG.width/2, CONFIG.height/2 - 40, 'GOAL!', {
-            fontFamily: 'monospace',
-            fontSize: '72px',
-            color: '#ffe600',
-            stroke: '#000',
-            strokeThickness: 8
-        }).setOrigin(0.5).setDepth(30).setVisible(false).setScale(0.5);
-    }
-
-    update(time, delta) {
-        if (!this.matchActive) return;
-
-        const dt = delta / 1000;
-
-        // --- PLAYER 1 INPUT ---
-        let p1Moving = false;
+    update() {
+        // --- P1 CONTROLS ---
         if (this.player1.canAct) {
-            this.player1.body.setVelocityX(0);
-            if (this.cursors.left.isDown) {
-                this.player1.body.setVelocityX(-CONFIG.playerSpeed);
-                this.player1.setFlipX(true);
-                p1Moving = true;
-            } else if (this.cursors.right.isDown) {
-                this.player1.body.setVelocityX(CONFIG.playerSpeed);
-                this.player1.setFlipX(false);
-                p1Moving = true;
-            }
+            let velX = 0;
+            if (this.cursors.left.isDown) { velX = -CONFIG.playerSpeed; this.player1.setFlipX(true); }
+            else if (this.cursors.right.isDown) { velX = CONFIG.playerSpeed; this.player1.setFlipX(false); }
+            this.player1.setVelocityX(velX);
 
-            // Animations
-            const currentAnim = this.player1.anims.currentAnim;
-            if (!currentAnim || (!currentAnim.key.includes('kick') && !currentAnim.key.includes('special'))) {
-                if (p1Moving) {
-                    if (currentAnim?.key !== 'p1_run') this.player1.play('p1_run', true);
-                } else {
-                    if (currentAnim?.key !== 'p1_idle') this.player1.play('p1_idle', true);
-                }
-            }
-
-            // Kick
-            if (Phaser.Input.Keyboard.JustDown(this.keyZ)) {
-                this.doKick(this.player1, false, 1);
-            }
-            // Special
-            if (Phaser.Input.Keyboard.JustDown(this.keyX)) {
-                if (this.player1.stamina >= 50) {
-                    this.doKick(this.player1, true, 1);
-                }
-            }
+            if (Phaser.Input.Keyboard.JustDown(this.keyZ)) this.doKick(this.player1, false);
+            if (Phaser.Input.Keyboard.JustDown(this.keyX) && this.player1.stamina >= 50) this.doKick(this.player1, true);
         }
 
-        // --- PLAYER 2 SIMPLE AI ---
-        this.updateAI(dt);
-
-        // --- STAMINA REGEN ---
-        this.player1.stamina = Math.min(100, this.player1.stamina + CONFIG.staminaRegen * dt);
-        this.player2.stamina = Math.min(100, this.player2.stamina + CONFIG.staminaRegen * dt * 0.9);
-
-        // Update stamina bars
-        this.staminaBarP1.width = 320 * (this.player1.stamina / 100);
-        this.staminaBarP2.width = 320 * (this.player2.stamina / 100);
-
-        // Stamina bar color: yellow > 50, orange < 50
-        this.staminaBarP1.fillColor = this.player1.stamina >= 50 ? 0xffe600 : 0xff8c00;
-        this.staminaBarP2.fillColor = this.player2.stamina >= 50 ? 0xffe600 : 0xff8c00;
-
-        // Keep players grounded (side-view fighter, no jump)
-        this.player1.y = CONFIG.groundY;
-        this.player2.y = CONFIG.groundY;
+        // --- SIMPLE AI ---
+        this.simpleAI();
     }
 
-    updateAI(dt) {
-        const ai = this.player2;
-        if (!ai.canAct || !this.matchActive) return;
-
-        const ballX = this.ball.x;
-        const distToBall = Math.abs(ballX - ai.x);
-        const ballDir = Math.sign(ballX - ai.x);
-
-        // Move toward ball
-        let targetSpeed = 0;
-        if (distToBall > 45) {
-            targetSpeed = CONFIG.playerSpeed * 0.88 * ballDir;
-        } else if (distToBall < 30) {
-            // small jockey
-            targetSpeed = CONFIG.playerSpeed * 0.3 * -ballDir;
-        }
-
-        ai.body.setVelocityX(targetSpeed);
-        ai.setFlipX(targetSpeed < 0 || ballX < ai.x);
-
-        // Animation
-        const currentAnim = ai.anims.currentAnim;
-        const isActing = currentAnim && (currentAnim.key.includes('kick') || currentAnim.key.includes('special'));
-        if (!isActing) {
-            if (Math.abs(targetSpeed) > 10) ai.play('p1_run', true);
-            else ai.play('p1_idle', true);
-        }
-
-        // AI Kick decision
-        const now = this.time.now;
-        const canKick = now - (this.lastKickTime.p2 || 0) > 500;
-        const ballClose = Phaser.Math.Distance.Between(ai.x, ai.y, this.ball.x, this.ball.y) < 62;
-
-        if (ballClose && canKick) {
-            const useSpecial = ai.stamina >= 50 && Phaser.Math.Between(0, 100) < 35 && Math.abs(ballX - 40) < 280;
-            this.doKick(ai, useSpecial, 2);
+    simpleAI() {
+        if (!this.player2.canAct) return;
+        const dir = this.ball.x < this.player2.x ? -1 : 1;
+        this.player2.setVelocityX(dir * CONFIG.playerSpeed * 0.7);
+        this.player2.setFlipX(dir < 0);
+        if (Phaser.Math.Distance.Between(this.player2.x, this.player2.y, this.ball.x, this.ball.y) < 70) {
+            this.doKick(this.player2, false);
         }
     }
 
-    doKick(player, isSpecial, playerNum) {
-        if (!player.canAct) return;
-
-        const kickRange = 62;
-        const dist = Phaser.Math.Distance.Between(player.x, player.y, this.ball.x, this.ball.y);
-        if (dist > kickRange + 12 && !isSpecial) {
-            // whiff animation anyway, but no ball hit
-        }
-
+    doKick(player, isSpecial) {
         player.canAct = false;
-        player.body.setVelocityX(0);
+        player.setVelocityX(0);
+        player.play(isSpecial ? 'p1_special' : 'p1_kick', true);
 
-        // Play animation
-        const animKey = isSpecial ? 'p1_special' : 'p1_kick';
-        player.play(animKey, true);
-
-        // Stamina cost
-        if (isSpecial) {
-            if (playerNum === 1) this.player1.stamina -= 50;
-            else this.player2.stamina -= 50;
-            // Screen shake
-            this.cameras.main.shake(140, 0.004);
-        }
-
-        // Apply kick force at peak of animation
-        const kickDelay = isSpecial ? 320 : 220;
-        this.time.delayedCall(kickDelay, () => {
-            const distNow = Phaser.Math.Distance.Between(player.x, player.y, this.ball.x, this.ball.y);
-            if (distNow < kickRange + 18) {
-                const dir = player.flipX ? -1 : 1;
-                const power = isSpecial ? CONFIG.specialPower : CONFIG.kickPower;
-                
-                // Add slight upward lift
-                this.ball.body.setVelocity(
-                    power * dir + Phaser.Math.Between(-30, 30),
-                    -180 - (isSpecial ? 80 : 0)
-                );
-
-                // Hit flash
-                this.ball.setTintFill(0xffffff);
-                this.time.delayedCall(70, () => this.ball.clearTint());
-
-                if (isSpecial) {
-                    // Kinetic trail effect
-                    const trail = this.add.circle(this.ball.x, this.ball.y, 14, 0x00d8ff, 0.5).setDepth(3);
-                    this.tweens.add({
-                        targets: trail,
-                        alpha: 0,
-                        scale: 2.2,
-                        duration: 250,
-                        onComplete: () => trail.destroy()
-                    });
-                }
-            }
+        this.time.delayedCall(200, () => {
+            const dir = player.flipX ? -1 : 1;
+            const force = isSpecial ? CONFIG.specialPower : CONFIG.kickPower;
+            this.ball.setVelocity(force * dir, -200);
+            if(isSpecial) player.stamina -= 50;
         });
 
-        // End lockout
-        const lockout = isSpecial ? 520 : 380;
-        player.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-            player.canAct = true;
-        });
-        // Fallback in case animation is interrupted
-        this.time.delayedCall(lockout + 40, () => { player.canAct = true; });
-
-        if (playerNum === 1) this.lastKickTime.p1 = this.time.now;
-        else this.lastKickTime.p2 = this.time.now;
-    }
-
-    scoreGoal(scoringPlayer) {
-        if (!this.matchActive) return;
-        this.matchActive = false;
-
-        if (scoringPlayer === 1) this.score.p1++;
-        else this.score.p2++;
-
-        this.updateScoreText();
-
-        // Freeze everything
-        this.physics.pause();
-        this.player1.anims.pause();
-        this.player2.anims.pause();
-
-        // GOAL! popup
-        this.goalText.setVisible(true).setScale(0.5).setAlpha(1);
-        this.tweens.add({
-            targets: this.goalText,
-            scale: 1.15,
-            duration: 180,
-            ease: 'Back.out',
-            yoyo: true,
-            hold: 1100
-        });
-
-        // Reset after 2s
-        this.time.delayedCall(2000, () => {
-            this.resetRound();
-        });
-    }
-
-    resetRound() {
-        this.physics.resume();
-        this.goalText.setVisible(false);
-
-        // Reset positions
-        this.player1.setPosition(200, CONFIG.groundY).setVelocity(0,0);
-        this.player2.setPosition(CONFIG.width - 200, CONFIG.groundY).setVelocity(0,0);
-        this.ball.setPosition(CONFIG.width/2, 260).setVelocity(0,0);
-
-        this.player1.canAct = true;
-        this.player2.canAct = true;
-        this.player1.play('p1_idle', true);
-        this.player2.play('p1_idle', true);
-
-        // Win check
-        if (this.score.p1 >= 5 || this.score.p2 >= 5) {
-            const winner = this.score.p1 >= 5 ? 'BLUE WINS!' : 'RED WINS!';
-            this.goalText.setText(winner).setVisible(true).setScale(1);
-            this.matchActive = false;
-            return;
-        }
-
-        this.matchActive = true;
-    }
-
-    updateScoreText() {
-        this.scoreText.setText(`${this.score.p1} - ${this.score.p2}`);
+        this.time.delayedCall(500, () => player.canAct = true);
     }
 }
-
-const game = new Phaser.Game({
-    type: Phaser.AUTO,
-    width: CONFIG.width,
-    height: CONFIG.height,
-    parent: 'game-container',
-    backgroundColor: '#15151a',
-    physics: {
-        default: 'arcade',
-        arcade: {
-            gravity: { y: 900 },
-            debug: false
-        }
-    },
-    scene: SoccerScene,
-    pixelArt: true,
-    roundPixels: true
-});
